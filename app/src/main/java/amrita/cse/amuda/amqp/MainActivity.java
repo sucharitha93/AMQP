@@ -9,14 +9,15 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.location.LocationManager;
 import android.net.wifi.ScanResult;
+import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
+import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -34,9 +35,6 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.net.URISyntaxException;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
@@ -44,9 +42,7 @@ import java.util.List;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
 
-import static amrita.cse.amuda.amqp.R.id.textView;
-import static amrita.cse.amuda.amqp.R.id.xCoordinate;
-import static amrita.cse.amuda.amqp.R.id.yCoordinate;
+import amrita.cse.amuda.amqp.Trilateration;
 
 public class MainActivity extends AppCompatActivity {
     private WifiManager wifiManager;
@@ -73,12 +69,14 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        setupConnectionFactory();
-        publishToAMQP();
         textView = (TextView) findViewById(R.id.textView);
         btnScan = (Button) findViewById(R.id.publish);
         xCoordinate = (EditText) findViewById(R.id.xCoordinate);
         yCoordinate = (EditText) findViewById(R.id.yCoordinate);
+
+        setupConnectionFactory();
+        publishToAMQP();
+
 
         final Handler incomingMessageHandler = new Handler() {
             @Override
@@ -166,13 +164,15 @@ public class MainActivity extends AppCompatActivity {
         handler.postDelayed(new Runnable() {
             @Override
             public void run() {
-                unregisterReceiver(wifiReceiver);
-                btnScan.setBackgroundColor(Color.GREEN);
+
                 try {
+                    unregisterReceiver(wifiReceiver);
+                    btnScan.setBackgroundColor(Color.GREEN);
+                    String msg="";
                     FileWriter fwWifi = new FileWriter(fileWifi,true);
                     BufferedWriter bwWifi = new BufferedWriter(fwWifi);
-                    String msg="";
-                    for(int i = 0;i<20;i++){
+                    ;
+                    for(int i = 0;i<16;i++){
                         if(cnt[i] != 0)
                         {
                             bwWifi.append(String.valueOf(rssiList[i] / cnt[i])+",");
@@ -181,24 +181,44 @@ public class MainActivity extends AppCompatActivity {
                         else
                         {
                             bwWifi.append(String.valueOf(0)+",");
-                            msg = msg + String.valueOf(0)+",";
-
+                            msg = msg + String.valueOf(0)+";";
                         }
                     }
-                    try {
-                        queue.putLast(msg);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
+//                    try {
+//                        queue.putLast(msg);
+//                    } catch (InterruptedException e) {
+//                        e.printStackTrace();
+//                    }
+
+                    WifiInfo info = wifiManager.getConnectionInfo();
+                    String macaddress = info.getMacAddress();
                     bwWifi.append("\n");
                     bwWifi.close();
+                    //=POWER(10,(B2+38.6667)/-(10*1.4))
+                    /*Location l = Trilateration.trilaterate(Float.parseFloat(xCoordinate.getText().toString()),Float.parseFloat(yCoordinate.getText().toString()),
+                            (float)Math.pow(10,(rssiList[0]+38.667)/-16),
+                            (float)Math.pow(10,(rssiList[2]+38.667)/-16),
+                            (float)Math.pow(10,(rssiList[4]+38.667)/-16),
+                            (float)Math.pow(10,(rssiList[6]+38.667)/-16),
+                            (float)Math.pow(10,(rssiList[8]+38.667)/-16),
+                            (float)Math.pow(10,(rssiList[10]+38.667)/-16),
+                            (float)Math.pow(10,(rssiList[12]+38.667)/-16),
+                            (float)Math.pow(10,(rssiList[14]+38.667)/-16)); */
+                    //String body = macaddress+","+l.getActualX()+","+l.getActualY()+","+l.getExperimentalX()+","+l.getExperimentalY()+","+msg;
+                    //2011-05-16 15:36:38
+                    String body =macaddress+","+xCoordinate.getText().toString()+","+yCoordinate.getText().toString()+","+6567+","+4567+","+msg;
+
+                    try {
+                            queue.putLast(body);
+                       } catch (InterruptedException e) {
+                            e.printStackTrace();
+                       }
 
                     Arrays.fill(rssiList,new Integer(0));
                     Arrays.fill(cnt,new Integer(0));
-
                     Toast.makeText(MainActivity.this,"20 seconds scan results done",Toast.LENGTH_SHORT).show();
                 }
-                catch (IOException e) {
+                catch (Exception e) {
                     e.printStackTrace();
                 }
             }
@@ -343,15 +363,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private BlockingDeque queue = new LinkedBlockingDeque();
-    void publishMessage(String message) {
-
-        try {
-            queue.putLast(message);
-            Toast.makeText(getApplicationContext(),queue.toString(),Toast.LENGTH_LONG).show();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-    }
+//    void publishMessage(String message) {
+//
+//        try {
+//            queue.putLast(message);
+//            Toast.makeText(getApplicationContext(),queue.toString(),Toast.LENGTH_LONG).show();
+//        } catch (InterruptedException e) {
+//            e.printStackTrace();
+//        }
+//    }
     ConnectionFactory factory = new ConnectionFactory();
     private void setupConnectionFactory() {
         String uri = "amqp://amuda:amuda2017@172.17.9.61:5672/%2f";
@@ -376,6 +396,7 @@ public class MainActivity extends AppCompatActivity {
                     try {
                         Connection connection = factory.newConnection();
                         Channel ch = connection.createChannel();
+                        //ch.queueDeclare("PQ", false, false, false, null);
                         ch.confirmSelect();
                         Log.i("","Reached publish to AMQP");
 
@@ -384,6 +405,7 @@ public class MainActivity extends AppCompatActivity {
                             String message = queue.takeFirst().toString();
                             Log.i("",message+" is the message to be published");
                             try{
+                                //ch.basicPublish("", "PQ", null, message.getBytes());
                                 ch.basicPublish("amq.fanout","severity" , null, message.getBytes());
                                 ch.waitForConfirmsOrDie();
                             } catch (Exception e){
@@ -452,6 +474,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         publishThread.interrupt();
-        subscribeThread.interrupt();
+        //subscribeThread.interrupt();
     }
 }
